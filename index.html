@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Memory Map</title>
+<meta name="description" content="A shared globe of memories. Tap anywhere to pin one." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
+<link href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    --space: #0b1020;
+    --card: #ffffff;
+    --ink: #151a2d;
+    --muted: #6b7290;
+    --accent: #ff4d6d;
+    --accent-2: #ffb703;
+    --line: #e7e9f2;
+    --radius: 22px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--space); font-family: "Nunito", system-ui, sans-serif; color: var(--ink); overflow: hidden; }
+  #map { position: fixed; inset: 0; background: radial-gradient(ellipse at center, #1b2445 0%, var(--space) 70%); }
+
+  /* Top counter pill */
+  .top {
+    position: fixed; top: calc(env(safe-area-inset-top) + 14px); left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; z-index: 5;
+  }
+  .pill {
+    background: var(--card); border-radius: 999px; padding: 8px 18px 8px 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25); display: flex; align-items: center; gap: 10px;
+  }
+  .pill .label { font-size: 11px; font-weight: 900; letter-spacing: .14em; color: var(--muted); }
+  .pill .count { font-size: 26px; font-weight: 900; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  .pill .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(255,77,109,.2); }
+  .icon-btn {
+    width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--card); color: var(--ink);
+    font-size: 20px; box-shadow: 0 6px 20px rgba(0,0,0,.25); cursor: pointer; display: grid; place-items: center;
+  }
+
+  /* Bottom card */
+  .sheet {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    width: min(520px, calc(100% - 24px));
+    background: var(--card); border-radius: var(--radius); padding: 18px 18px 16px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.35); z-index: 6;
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  .sheet h2 { margin: 0 0 4px; font-size: 20px; font-weight: 900; }
+  .sheet p { margin: 0; color: var(--muted); font-weight: 600; font-size: 15px; }
+  .hint-row { display: flex; align-items: center; gap: 14px; }
+  .hint-emoji { font-size: 34px; }
+
+  .field { margin-top: 12px; }
+  .field label { display: block; font-size: 11px; font-weight: 900; letter-spacing: .12em; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field textarea {
+    width: 100%; border: 2px solid var(--line); border-radius: 14px; padding: 12px 14px;
+    font: 700 16px "Nunito", sans-serif; color: var(--ink); outline: none; resize: none; background: #fafbff;
+  }
+  .field input:focus, .field textarea:focus { border-color: var(--accent); background: #fff; }
+  .counter { text-align: right; font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 4px; }
+
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  .btn {
+    flex: 1; border: 0; border-radius: 16px; padding: 14px; font: 900 16px "Nunito", sans-serif; cursor: pointer;
+    box-shadow: 0 4px 0 rgba(0,0,0,.15); transition: transform .08s;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.15); }
+  .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 4px 0 #c9304d; }
+  .btn.ghost { background: #eef0f7; color: var(--ink); }
+  .btn:disabled { opacity: .6; cursor: default; }
+
+  /* Memory detail */
+  .meta { margin-top: 10px; font-size: 13px; color: var(--muted); font-weight: 700; }
+  .desc { margin-top: 8px !important; color: var(--ink) !important; font-size: 16px !important; white-space: pre-wrap; line-height: 1.4; }
+
+  /* Pins */
+  .pin { width: 26px; height: 26px; cursor: pointer; filter: drop-shadow(0 3px 4px rgba(0,0,0,.35)); transition: transform .15s; }
+  .pin:hover { transform: scale(1.15); }
+  .pin svg { width: 100%; height: 100%; display: block; }
+  .pin.draft { animation: bob 1s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+
+  /* List drawer */
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: min(380px, 100%); background: var(--card); z-index: 10;
+    transform: translateX(100%); transition: transform .25s ease; display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer header { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 10px; }
+  .drawer header h3 { margin: 0; font-size: 20px; font-weight: 900; }
+  .list { overflow-y: auto; padding: 0 12px 24px; }
+  .item { padding: 12px; border-radius: 14px; cursor: pointer; }
+  .item:hover { background: #f4f5fb; }
+  .item b { display: block; font-size: 16px; }
+  .item span { font-size: 13px; color: var(--muted); font-weight: 700; }
+  .empty { padding: 18px; color: var(--muted); font-weight: 700; }
+
+  .toast {
+    position: fixed; top: calc(env(safe-area-inset-top) + 76px); left: 50%; transform: translate(-50%, -20px);
+    background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px; font-weight: 800; font-size: 14px;
+    opacity: 0; transition: all .25s; z-index: 20; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .hidden { display: none !important; }
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top">
+  <div class="pill" aria-live="polite">
+    <span class="dot"></span>
+    <span class="label">MEMORIES</span>
+    <span class="count" id="count">000</span>
+  </div>
+  <button class="icon-btn" id="listBtn" aria-label="All memories">☰</button>
+</div>
+
+<!-- Default hint -->
+<div class="sheet" id="hintSheet">
+  <div class="hint-row">
+    <div class="hint-emoji">📍</div>
+    <div>
+      <h2>Tap the globe to pin a memory</h2>
+      <p>Spin, zoom in, and drop a pin anywhere something happened.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Add form -->
+<form class="sheet hidden" id="formSheet" autocomplete="off">
+  <h2>New memory</h2>
+  <p id="placeLabel">Dropping a pin here…</p>
+  <div class="field">
+    <label for="title">TITLE</label>
+    <input id="title" maxlength="60" placeholder="First apartment, the big storm, our wedding…" required />
+  </div>
+  <div class="field">
+    <label for="desc">WHAT HAPPENED HERE</label>
+    <textarea id="desc" rows="3" maxlength="280" placeholder="A few sentences is perfect." required></textarea>
+    <div class="counter"><span id="descCount">0</span>/280</div>
+  </div>
+  <div class="field">
+    <label for="author">YOUR NAME (OPTIONAL)</label>
+    <input id="author" maxlength="40" placeholder="Anonymous" />
+  </div>
+  <div class="actions">
+    <button type="button" class="btn ghost" id="cancelBtn">Cancel</button>
+    <button type="submit" class="btn primary" id="saveBtn">Pin it</button>
+  </div>
+</form>
+
+<!-- Memory detail -->
+<div class="sheet hidden" id="detailSheet">
+  <h2 id="dTitle"></h2>
+  <p class="desc" id="dDesc"></p>
+  <div class="meta" id="dMeta"></div>
+  <div class="actions">
+    <button type="button" class="btn ghost" id="closeDetail">Close</button>
+  </div>
+</div>
+
+<aside class="drawer" id="drawer" aria-label="All memories">
+  <header>
+    <h3>All memories</h3>
+    <button class="icon-btn" id="closeDrawer" aria-label="Close">✕</button>
+  </header>
+  <div class="list" id="list"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "/api/memories";
+const $ = (id) => document.getElementById(id);
+const PIN_SVG = (color) => `<svg viewBox="0 0 24 24"><path fill="${color}" stroke="#fff" stroke-width="2" d="M12 2C7.6 2 4 5.5 4 9.9 4 15.6 12 22 12 22s8-6.4 8-12.1C20 5.5 16.4 2 12 2z"/><circle cx="12" cy="10" r="3" fill="#fff"/></svg>`;
+const COLORS = ["#ff4d6d", "#ffb703", "#3a86ff", "#06d6a0", "#8338ec", "#fb5607"];
+const colorFor = (id) => COLORS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+
+let memories = [];
+const markers = new Map();
+let draftMarker = null;
+let draftLngLat = null;
+
+// --- Map ---
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/liberty",
+  center: [-40, 30],
+  zoom: 1.6,
+  attributionControl: { compact: true },
+});
+map.on("style.load", () => {
+  map.setProjection({ type: "globe" });
+});
+
+map.on("click", (e) => {
+  if (!$("detailSheet").classList.contains("hidden")) closeDetail();
+  startDraft(e.lngLat);
+});
+
+// --- UI helpers ---
+function show(sheet) {
+  ["hintSheet", "formSheet", "detailSheet"].forEach((id) => $(id).classList.toggle("hidden", id !== sheet));
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+function setCount(n) { $("count").textContent = String(n).padStart(3, "0"); }
+
+// --- Draft pin ---
+function startDraft(lngLat) {
+  draftLngLat = lngLat;
+  if (!draftMarker) {
+    const el = document.createElement("div");
+    el.className = "pin draft";
+    el.innerHTML = PIN_SVG("#151a2d");
+    draftMarker = new maplibregl.Marker({ element: el, anchor: "bottom" });
+  }
+  draftMarker.setLngLat(lngLat).addTo(map);
+  $("placeLabel").textContent = `${lngLat.lat.toFixed(3)}, ${lngLat.lng.toFixed(3)}`;
+  show("formSheet");
+  reverseGeocode(lngLat);
+}
+function cancelDraft() {
+  if (draftMarker) draftMarker.remove();
+  draftLngLat = null;
+  $("formSheet").reset(); $("descCount").textContent = "0";
+  try { $("author").value = localStorage.getItem("mm_author") || ""; } catch {}
+  show("hintSheet");
+}
+async function reverseGeocode({ lat, lng }) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${lat}&lon=${lng}`);
+    const j = await r.json();
+    if (draftLngLat && draftLngLat.lat === lat && j.display_name) {
+      const a = j.address || {};
+      const place = [a.city || a.town || a.village || a.county, a.state, a.country].filter(Boolean).join(", ");
+      $("placeLabel").textContent = place || j.display_name;
+    }
+  } catch {}
+}
+
+// --- Memories ---
+function addMarker(m) {
+  if (markers.has(m.id)) return;
+  const el = document.createElement("div");
+  el.className = "pin";
+  el.innerHTML = PIN_SVG(colorFor(m.id));
+  el.addEventListener("click", (ev) => { ev.stopPropagation(); openDetail(m); });
+  const mk = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([m.lng, m.lat]).addTo(map);
+  markers.set(m.id, mk);
+}
+function render() {
+  memories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  memories.forEach(addMarker);
+  setCount(memories.length);
+  const list = $("list");
+  list.innerHTML = "";
+  if (!memories.length) { list.innerHTML = `<div class="empty">No memories yet. Be the first!</div>`; return; }
+  for (const m of memories) {
+    const div = document.createElement("div");
+    div.className = "item";
+    const b = document.createElement("b"); b.textContent = m.title;
+    const s = document.createElement("span"); s.textContent = `${m.place || "Somewhere"} · ${fmtDate(m.createdAt)}`;
+    div.append(b, s);
+    div.onclick = () => { $("drawer").classList.remove("open"); flyTo(m); openDetail(m); };
+    list.append(div);
+  }
+}
+function flyTo(m) { map.flyTo({ center: [m.lng, m.lat], zoom: Math.max(map.getZoom(), 5), speed: 1.4 }); }
+function openDetail(m) {
+  if (draftMarker) draftMarker.remove();
+  $("dTitle").textContent = m.title;
+  $("dDesc").textContent = m.description;
+  $("dMeta").textContent = [m.author ? `— ${m.author}` : "— Anonymous", m.place, fmtDate(m.createdAt)].filter(Boolean).join(" · ");
+  show("detailSheet");
+}
+function closeDetail() { show("hintSheet"); }
+
+async function load() {
+  try {
+    const r = await fetch(API);
+    if (!r.ok) throw new Error();
+    memories = await r.json();
+    render();
+  } catch { toast("Couldn't load memories"); }
+}
+
+// --- Events ---
+$("desc").addEventListener("input", (e) => $("descCount").textContent = e.target.value.length);
+$("cancelBtn").onclick = cancelDraft;
+$("closeDetail").onclick = closeDetail;
+$("listBtn").onclick = () => $("drawer").classList.add("open");
+$("closeDrawer").onclick = () => $("drawer").classList.remove("open");
+
+$("formSheet").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!draftLngLat) return;
+  const btn = $("saveBtn"); btn.disabled = true; btn.textContent = "Pinning…";
+  const label = $("placeLabel").textContent;
+  try {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lat: draftLngLat.lat, lng: draftLngLat.lng,
+        title: $("title").value.trim(),
+        description: $("desc").value.trim(),
+        author: $("author").value.trim(),
+        place: /^-?\d/.test(label) ? "" : label,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Save failed");
+    const m = await r.json();
+    memories.push(m);
+    try { localStorage.setItem("mm_author", $("author").value.trim()); } catch {}
+    cancelDraft(); render(); toast("Memory pinned 📍");
+  } catch (err) {
+    toast(err.message || "Save failed");
+  } finally { btn.disabled = false; btn.textContent = "Pin it"; }
+});
+
+try { $("author").value = localStorage.getItem("mm_author") || ""; } catch {}
+load();
+setInterval(load, 30000); // pick up other people's new pins
+</script>
+</body>
+</html>
