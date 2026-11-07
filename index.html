@@ -44,7 +44,7 @@
   /* Bottom card */
   .sheet {
     position: fixed; left: 50%; transform: translateX(-50%);
-    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    bottom: calc(env(safe-area-inset-bottom) + 28px);
     width: min(520px, calc(100% - 24px));
     background: var(--card); border-radius: var(--radius); padding: 18px 18px 16px;
     box-shadow: 0 14px 40px rgba(0,0,0,.35); z-index: 6;
@@ -360,5 +360,6 @@ try { $("author").value = localStorage.getItem("mm_author") || ""; } catch {}
 load();
 setInterval(load, 30000); // pick up other people's new pins
 </script>
+<div id="lu-stamp" style="position:fixed;left:0;right:0;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:5;pointer-events:none;color:#fff;font:500 11px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;letter-spacing:.02em;text-align:center;opacity:.55">Last updated Nov 6, 2026, 11:46 PM EST</div>
 </body>
 </html>
